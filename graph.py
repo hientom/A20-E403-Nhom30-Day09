@@ -1,14 +1,3 @@
-"""
-graph.py — Supervisor Orchestrator
-Sprint 1: Implement AgentState, supervisor_node, route_decision và kết nối graph.
-
-Kiến trúc:
-    Input → Supervisor → [retrieval_worker | policy_tool_worker | human_review] → synthesis → Output
-
-Chạy thử:
-    python graph.py
-"""
-
 import json
 import os
 from datetime import datetime
@@ -81,12 +70,11 @@ def supervisor_node(state: AgentState) -> AgentState:
     2. Có cần MCP tool không
     3. Có risk cao cần HITL không
 
-    TODO Sprint 1: Implement routing logic dựa vào task keywords. (DONE)
+    TODO Sprint 1: Implement routing logic dựa vào task keywords.
     """
     task = state["task"].lower()
     state["history"].append(f"[supervisor] received task: {state['task'][:80]}")
 
-    # --- TODO: Implement routing logic --- (DONE)
     
     # 1. Định nghĩa bộ từ khóa nhận diện
     policy_keywords = ["hoàn tiền", "refund", "flash sale", "license", "cấp quyền", "access", "level 3"]
@@ -175,12 +163,6 @@ def human_review_node(state: AgentState) -> AgentState:
 # ─────────────────────────────────────────────
 # 5. Import Workers
 # ─────────────────────────────────────────────
-
-# TODO Sprint 2: Uncomment sau khi implement workers
-# from workers.retrieval import run as retrieval_run
-# from workers.policy_tool import run as policy_tool_run
-# from workers.synthesis import run as synthesis_run
-
 
 def retrieval_worker_node(state: AgentState) -> AgentState:
     """Wrapper gọi retrieval worker."""
