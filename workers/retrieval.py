@@ -26,6 +26,9 @@ import sys
 
 WORKER_NAME = "retrieval_worker"
 DEFAULT_TOP_K = 3
+TOP_K_SEARCH = 10       # Số chunks query từ ChromaDB
+TOP_K_SELECT = 3        # Số chunks handoff cho synthesis
+ABSTAIN_THRESHOLD = 0.3 # Lọc bỏ chunk có score < threshold
 
 
 def _get_embedding_fn():
@@ -65,35 +68,40 @@ def _get_embedding_fn():
 def _get_collection():
     """
     Kết nối ChromaDB collection.
-    TODO Sprint 2: Đảm bảo collection đã được build từ Step 3 trong README.
+    Đọc path và collection name từ env vars CHROMA_DB_PATH, CHROMA_COLLECTION.
     """
     import chromadb
-    client = chromadb.PersistentClient(path="./chroma_db")
+    chroma_path = os.getenv("CHROMA_DB_PATH", "./chroma_db")
+    collection_name = os.getenv("CHROMA_COLLECTION", "day09_docs")
+    client = chromadb.PersistentClient(path=chroma_path)
     try:
-        collection = client.get_collection("day09_docs")
+        collection = client.get_collection(collection_name)
     except Exception:
         # Auto-create nếu chưa có
         collection = client.get_or_create_collection(
-            "day09_docs",
+            collection_name,
             metadata={"hnsw:space": "cosine"}
         )
-        print(f"⚠️  Collection 'day09_docs' chưa có data. Chạy index script trong README trước.")
+        print(f"⚠️  Collection '{collection_name}' chưa có data. Chạy index script trong README trước.")
     return collection
 
 
-def retrieve_dense(query: str, top_k: int = DEFAULT_TOP_K) -> list:
+def retrieve_dense(
+    query: str,
+    top_k_search: int = TOP_K_SEARCH,
+    top_k_select: int = TOP_K_SELECT,
+) -> list:
     """
-    Dense retrieval: embed query → query ChromaDB → trả về top_k chunks.
+    Dense retrieval: embed query → query ChromaDB → lọc threshold → trả top_k_select chunks.
 
-    TODO Sprint 2: Implement phần này.
-    - Dùng _get_embedding_fn() để embed query
-    - Query collection với n_results=top_k
-    - Format result thành list of dict
+    Two-stage:
+    - Bước 1: Query ChromaDB với n_results=top_k_search (mặc định 10)
+    - Bước 2: Lọc bỏ chunk có score < ABSTAIN_THRESHOLD (0.3)
+    - Bước 3: Trả về tối đa top_k_select (mặc định 3) chunks còn lại
 
     Returns:
         list of {"text": str, "source": str, "score": float, "metadata": dict}
     """
-    # TODO: Implement dense retrieval
     embed = _get_embedding_fn()
     query_embedding = embed(query)
 
@@ -101,27 +109,30 @@ def retrieve_dense(query: str, top_k: int = DEFAULT_TOP_K) -> list:
         collection = _get_collection()
         results = collection.query(
             query_embeddings=[query_embedding],
-            n_results=top_k,
+            n_results=top_k_search,
             include=["documents", "distances", "metadatas"]
         )
 
         chunks = []
-        for i, (doc, dist, meta) in enumerate(zip(
+        for doc, dist, meta in zip(
             results["documents"][0],
             results["distances"][0],
             results["metadatas"][0]
-        )):
+        ):
+            score = round(1 - dist, 4)  # cosine similarity
+            if score < ABSTAIN_THRESHOLD:
+                continue  # Lọc bỏ chunk dưới threshold
             chunks.append({
                 "text": doc,
                 "source": meta.get("source", "unknown"),
-                "score": round(1 - dist, 4),  # cosine similarity
+                "score": score,
                 "metadata": meta,
             })
-        return chunks
+
+        return chunks[:top_k_select]
 
     except Exception as e:
         print(f"⚠️  ChromaDB query failed: {e}")
-        # Fallback: return empty (abstain)
         return []
 
 
@@ -136,7 +147,8 @@ def run(state: dict) -> dict:
         Updated AgentState với retrieved_chunks và retrieved_sources
     """
     task = state.get("task", "")
-    top_k = state.get("retrieval_top_k", DEFAULT_TOP_K)
+    top_k_search = state.get("retrieval_top_k_search", TOP_K_SEARCH)
+    top_k_select = state.get("retrieval_top_k", TOP_K_SELECT)
 
     state.setdefault("workers_called", [])
     state.setdefault("history", [])
@@ -146,13 +158,13 @@ def run(state: dict) -> dict:
     # Log worker IO (theo contract)
     worker_io = {
         "worker": WORKER_NAME,
-        "input": {"task": task, "top_k": top_k},
+        "input": {"task": task, "top_k_search": top_k_search, "top_k_select": top_k_select},
         "output": None,
         "error": None,
     }
 
     try:
-        chunks = retrieve_dense(task, top_k=top_k)
+        chunks = retrieve_dense(task, top_k_search=top_k_search, top_k_select=top_k_select)
 
         sources = list({c["source"] for c in chunks})
 

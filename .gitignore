@@ -1,0 +1,26 @@
+# Security: Chặn các file chứa mã bí mật (QUAN TRỌNG NHẤT)
+.env
+.env.local
+.env.*
+secrets.json
+
+# Python: Chặn các file rác và môi trường ảo
+__pycache__/
+*.py[cod]
+*$py.class
+venv/
+.venv/
+env/
+build/
+dist/
+
+# Node/Frontend: Chặn các thư viện tải về
+node_modules/
+npm-debug.log*
+yarn-error.log*
+
+# Hệ điều hành và IDE
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
